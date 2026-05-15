@@ -6,5 +6,8 @@ export function resolveUploadUrl(path) {
   const p = path.trim();
   if (!p) return "";
   if (p.startsWith("http://") || p.startsWith("https://")) return p;
+  if (p.startsWith("/gifs/")) {
+    return `${API_BASE}/api/gifs/file/${p.slice("/gifs/".length)}`;
+  }
   return `${API_BASE}${p.startsWith("/") ? p : `/${p}`}`;
 }
