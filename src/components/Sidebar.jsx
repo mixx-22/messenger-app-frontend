@@ -23,7 +23,6 @@ import {
   Eye,
   FileText,
   LogOut,
-  Menu,
   Moon,
   Search,
   Settings as SettingsIcon,
@@ -263,6 +262,8 @@ export default function Sidebar({
   const myId = String(currentUser?._id);
   const drawerStatus = statusDraft || currentUser?.status || "away";
   const drawerStatusLine = statusLine(drawerStatus, statusMessageDraft);
+  const navStatus =
+    drawerStatus && drawerStatus !== "invisible" ? drawerStatus : "invisible";
 
   useEffect(() => {
     setProfileDraft({
@@ -1281,12 +1282,31 @@ export default function Sidebar({
             aria-label={isSubView ? "Back to chats" : "Open menu"}
             size={{ base: "md", md: "sm" }}
             borderRadius="full"
-            bg={appearance.inputBg}
+            bg={isSubView ? appearance.inputBg : "transparent"}
             color={appearance.text}
             _hover={{ bg: appearance.hoverBg }}
             onClick={handleSidebarNavButton}
           >
-            {isSubView ? <ArrowLeft size={20} /> : <Menu size={20} />}
+            {isSubView ? (
+              <ArrowLeft size={20} />
+            ) : (
+              <Box position="relative">
+                <UserAvatar
+                  name={currentUser?.name || currentUser?.email}
+                  avatarUrl={currentUser?.avatarUrl}
+                  size="sm"
+                />
+                <StatusIndicator
+                  position="absolute"
+                  bottom={0}
+                  right={0}
+                  borderColor={appearance.panelBg}
+                  status={navStatus}
+                  size={14}
+                  iconSize={7}
+                />
+              </Box>
+            )}
           </IconButton>
           <Box position="relative" flex="1">
             <Box
