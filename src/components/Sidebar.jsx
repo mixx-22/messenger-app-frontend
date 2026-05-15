@@ -56,6 +56,18 @@ import {
   statusLine,
 } from "./userStatus";
 
+function isGifAttachment(file) {
+  const name = String(file?.originalName || file?.fileName || "").toLowerCase();
+  const mimetype = String(file?.mimetype || "").toLowerCase();
+  const url = String(file?.url || "").toLowerCase();
+  return (
+    mimetype === "image/gif" ||
+    name.endsWith(".gif") ||
+    url.includes("/api/gifs/file/") ||
+    url.includes("/gifs/")
+  );
+}
+
 // ---------------- ROW COMPONENT (FIXED) ----------------
 function ConversationRow({
   user,
@@ -965,7 +977,11 @@ export default function Sidebar({
         headers: authHeadersJSON(token),
       });
       const data = await res.json().catch(() => ({}));
-      setAllFiles(res.ok && Array.isArray(data.items) ? data.items : []);
+      setAllFiles(
+        res.ok && Array.isArray(data.items)
+          ? data.items.filter((file) => !isGifAttachment(file))
+          : [],
+      );
     } finally {
       setLoadingAllFiles(false);
     }
@@ -1214,8 +1230,9 @@ export default function Sidebar({
   ]);
 
   const filteredAllFiles = useMemo(() => {
-    if (!q) return allFiles;
-    return allFiles.filter((file) => {
+    const list = allFiles.filter((file) => !isGifAttachment(file));
+    if (!q) return list;
+    return list.filter((file) => {
       const haystack = `${file?.originalName || ""} ${file?.fileName || ""} ${file?.chatName || ""} ${file?.senderName || ""}`.toLowerCase();
       return haystack.includes(q);
     });

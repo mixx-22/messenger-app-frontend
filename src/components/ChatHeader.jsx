@@ -26,6 +26,22 @@ import {
   X,
 } from "lucide-react";
 
+function attachmentName(file) {
+  return file?.originalName || file?.fileName || "Attachment";
+}
+
+function isGifAttachment(file) {
+  const name = attachmentName(file).toLowerCase();
+  const mimetype = String(file?.mimetype || "").toLowerCase();
+  const url = String(file?.url || "").toLowerCase();
+  return (
+    mimetype === "image/gif" ||
+    name.endsWith(".gif") ||
+    url.includes("/api/gifs/file/") ||
+    url.includes("/gifs/")
+  );
+}
+
 export default function ChatHeader({
   receiver,
   chatTheme,
@@ -100,7 +116,9 @@ export default function ChatHeader({
     ["links", "Links"],
   ];
   const filesForTab = useMemo(() => {
-    const list = Array.isArray(files) ? files : [];
+    const list = Array.isArray(files)
+      ? files.filter((file) => !isGifAttachment(file))
+      : [];
     if (fileTab === "media") {
       return list.filter((file) => file.type === "image" || file.type === "video");
     }
@@ -110,14 +128,16 @@ export default function ChatHeader({
     return [];
   }, [fileTab, files]);
   const linksForTab = useMemo(() => (Array.isArray(links) ? links : []), [links]);
-  const fileName = (file) => file?.originalName || file?.fileName || "Attachment";
+  const fileName = attachmentName;
   const fileExtension = (file) =>
     fileName(file).split(".").pop()?.slice(0, 4).toUpperCase() || "FILE";
   const isImageAttachment = (file) =>
     file?.type === "image" ||
     String(file?.mimetype || "").startsWith("image/") ||
     /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(fileName(file));
-  const imageGallery = Array.isArray(files) ? files.filter(isImageAttachment) : [];
+  const imageGallery = Array.isArray(files)
+    ? files.filter((file) => isImageAttachment(file) && !isGifAttachment(file))
+    : [];
   const linkHost = (href) => {
     try {
       return new URL(href).hostname;
