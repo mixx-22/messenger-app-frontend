@@ -175,6 +175,38 @@ function directSeenReceipt(msg, receiverId) {
   return { seen: false, seenAt: "" };
 }
 
+function multiSeenReceipt(msg, userId) {
+  const rows = seenUsersForMessage(msg)
+    .filter((row) => String(row?.userId) !== String(userId))
+    .sort((a, b) => {
+      const ad = new Date(a?.seenAt || 0).getTime();
+      const bd = new Date(b?.seenAt || 0).getTime();
+      return bd - ad;
+    });
+
+  if (!rows.length) return { seen: false, seenAt: "", seenUsers: [] };
+
+  return {
+    seen: true,
+    seenAt: rows[0]?.seenAt || "",
+    seenUsers: rows,
+  };
+}
+
+function receiptTitleForSeen(receipt) {
+  if (!receipt?.seen) return "Seen";
+  const seenAtLabel = formatSeenAt(receipt.seenAt);
+  const users = Array.isArray(receipt.seenUsers) ? receipt.seenUsers : [];
+  if (!users.length) return seenAtLabel ? `Seen ${seenAtLabel}` : "Seen";
+
+  const names = users
+    .slice(0, 6)
+    .map((user) => user?.name || "User")
+    .join(", ");
+  const extra = users.length > 6 ? ` +${users.length - 6} more` : "";
+  return `${seenAtLabel ? `Seen ${seenAtLabel}` : "Seen"}\n${names}${extra}`;
+}
+
 function replyPreviewText(replyTo) {
   if (!replyTo) return "";
   if (replyTo.content) return replyTo.content;
@@ -300,7 +332,7 @@ function MessageHoverActions({
               borderRadius="md"
               boxShadow="md"
               fontSize="11px"
-              whiteSpace="nowrap"
+              whiteSpace="pre-line"
               zIndex={20}
             >
               {receiptTitle}
@@ -310,24 +342,6 @@ function MessageHoverActions({
       )}
     </HStack>
   );
-}
-
-function isOrganizationTicketMessage(msg) {
-  if (msg?.organizationMessageType) {
-    return msg.organizationMessageType === "ticket";
-  }
-  const content = String(msg?.content || "").trim();
-  return (
-    content.startsWith("Ticket pending") ||
-    content.startsWith("Ticket Number:")
-  );
-}
-
-function isOrganizationAnnouncementMessage(msg) {
-  if (msg?.organizationMessageType) {
-    return msg.organizationMessageType === "announcement";
-  }
-  return !isOrganizationTicketMessage(msg);
 }
 
 /* ---------------- Attachment ---------------- */
@@ -548,7 +562,6 @@ function PhotoGrid({ files, onOpen, mt = 2 }) {
 /* ---------------- MAIN ---------------- */
 export default function MessageList({
   userId,
-  currentUser,
   receiver,
   setReplyTo,
   setEditing,
@@ -603,11 +616,7 @@ export default function MessageList({
       const sameOrganization =
         m.channel === "organization" &&
         String(m.organizationId) === String(pickId(receiver.organizationId));
-      if (!sameOrganization) return false;
-      return (
-        isOrganizationAnnouncementMessage(m) ||
-        !isOrganizationTicketMessage(m)
-      );
+      return sameOrganization;
     }
     const a = String(m.senderId);
     const b = String(m.receiverId);
@@ -725,6 +734,13 @@ export default function MessageList({
           );
         }
 
+        if (isOrganization) {
+          return (
+            m.channel === "organization" &&
+            String(m.organizationId) === String(pickId(receiver.organizationId))
+          );
+        }
+
         return String(m.receiverId) === String(userId) && !m.isRead;
       })
       .map((m) => m._id);
@@ -736,9 +752,11 @@ export default function MessageList({
   }, [
     isAnnouncement,
     isGroup,
+    isOrganization,
     messages,
     markMessagesReadByIds,
     receiver.groupId,
+    receiver.organizationId,
     userId,
   ]);
 
@@ -826,17 +844,6 @@ export default function MessageList({
     setCtxMenuMode(mode);
   };
 
-  const bottomSeenUsers = (() => {
-    if (!isGroup && !isAnnouncement) return [];
-    const latestSeen = [...visibleMessages]
-      .reverse()
-      .find((message) => seenUsersForMessage(message).length > 0);
-    if (!latestSeen) return [];
-    return seenUsersForMessage(latestSeen).filter(
-      (user) => String(user.userId) !== String(userId),
-    );
-  })();
-
   const forwardToUser = async (targetUser) => {
     if (!forwardMessage || !targetUser?._id || forwardingTo) return;
 
@@ -901,15 +908,13 @@ export default function MessageList({
             const isLastInGroup =
               !next || String(next.senderId) !== String(msg.senderId);
             const reactions = reactionSummary(msg.reactions);
-            const seenUsers = [];
-            const directReceipt =
-              !isGroup && !isAnnouncement && !isOrganization && isMine
-                ? directSeenReceipt(msg, receiver?._id)
-                : { seen: false, seenAt: "" };
-            const seenAtLabel = formatSeenAt(directReceipt.seenAt);
-            const receiptTitle = seenAtLabel
-              ? `Seen ${seenAtLabel}`
-              : "Seen";
+            const receipt =
+              isMine && (isGroup || isAnnouncement || isOrganization)
+                ? multiSeenReceipt(msg, userId)
+                : !isGroup && !isAnnouncement && !isOrganization && isMine
+                  ? directSeenReceipt(msg, receiver?._id)
+                  : { seen: false, seenAt: "", seenUsers: [] };
+            const receiptTitle = receiptTitleForSeen(receipt);
             const showHoverActions =
               String(hoveredMessageId) === String(msg._id) ||
               String(ctxMenuMsg?._id || "") === String(msg._id);
@@ -961,7 +966,7 @@ export default function MessageList({
                 align="flex-end"
                 gap={{ base: 1.5, md: 2 }}
                 position="relative"
-                pb={seenUsers.length > 0 ? 3 : 0}
+                pb={0}
                 py={0.5}
                 mb={reactions.length > 0 ? 3 : 0}
                 onMouseEnter={() => setHoveredMessageId(msg._id)}
@@ -987,7 +992,7 @@ export default function MessageList({
                 {/* LEFT AVATAR */}
                 {!isMine && (
                   <Box w={{ base: "26px", md: "32px" }} flexShrink={0}>
-                    {isLastInGroup ? (
+                    {isGroup || isLastInGroup ? (
                       <UserAvatar
                         name={
                           isAnnouncement || isGroup || isOrganization
@@ -1013,7 +1018,7 @@ export default function MessageList({
                     isMine={isMine}
                     canReply={!isAnnouncement && !isOrganization}
                     visible={showHoverActions}
-                    directReceipt={directReceipt}
+                    directReceipt={receipt}
                     receiptTitle={receiptTitle}
                     receiptOpen={String(openReceiptId) === String(msg._id)}
                     appearance={appearance}
@@ -1298,7 +1303,7 @@ export default function MessageList({
                     isMine={isMine}
                     canReply={!isAnnouncement && !isOrganization}
                     visible={showHoverActions}
-                    directReceipt={directReceipt}
+                    directReceipt={receipt}
                     receiptTitle={receiptTitle}
                     receiptOpen={String(openReceiptId) === String(msg._id)}
                     appearance={appearance}
@@ -1315,60 +1320,6 @@ export default function MessageList({
                   />
                 )}
 
-                {/* RIGHT AVATAR */}
-                {isMine && (
-                  <Box w={{ base: "26px", md: "32px" }} flexShrink={0}>
-                    {isLastInGroup ? (
-                      <UserAvatar
-                        name={currentUser?.name}
-                        avatarUrl={currentUser?.avatarUrl}
-                        size="xs"
-                      />
-                    ) : (
-                      <Box w="28px" h="28px" />
-                    )}
-                  </Box>
-                )}
-
-                {seenUsers.length > 0 && (
-                  <Flex
-                    position="absolute"
-                    right={isMine ? "44px" : "auto"}
-                    left={isMine ? "auto" : { base: "34px", md: "44px" }}
-                    bottom="-13px"
-                    align="center"
-                    gap="2px"
-                    maxW="170px"
-                    justify={isMine ? "flex-end" : "flex-start"}
-                  >
-                    {seenUsers.slice(0, 6).map((user) => (
-                      <UserAvatar
-                        key={user.userId}
-                        name={user.name}
-                        avatarUrl={user.avatarUrl}
-                        size="2xs"
-                        border="1px solid white"
-                        title={user.name || "Seen"}
-                      />
-                    ))}
-                    {seenUsers.length > 6 && (
-                      <Flex
-                        h="18px"
-                        minW="18px"
-                        px="4px"
-                        align="center"
-                        justify="center"
-                        bg={appearance.id === "dark" ? "#475569" : "gray.600"}
-                        color="white"
-                        borderRadius="full"
-                        fontSize="10px"
-                        border="1px solid white"
-                      >
-                        +{seenUsers.length - 6}
-                      </Flex>
-                    )}
-                  </Flex>
-                )}
                   </>
                 )}
               </Flex>
@@ -1391,45 +1342,6 @@ export default function MessageList({
             </Text>
           )}
         </VStack>
-        {bottomSeenUsers.length > 0 && (
-          <Flex
-            position="absolute"
-            right={{ base: 3, md: 7 }}
-            bottom={{ base: 3, md: 4 }}
-            zIndex={5}
-            justify="flex-end"
-            align="center"
-            gap="2px"
-            pointerEvents="none"
-          >
-            {bottomSeenUsers.length > 6 && (
-              <Flex
-                h="18px"
-                minW="22px"
-                px="5px"
-                align="center"
-                justify="center"
-                bg={appearance.id === "dark" ? "#475569" : "gray.600"}
-                color="white"
-                borderRadius="full"
-                fontSize="10px"
-                border="1px solid white"
-              >
-                +{bottomSeenUsers.length - 6}
-              </Flex>
-            )}
-            {bottomSeenUsers.slice(0, 6).map((user) => (
-              <UserAvatar
-                key={user.userId}
-                name={user.name}
-                avatarUrl={user.avatarUrl}
-                size="2xs"
-                border="1px solid white"
-                title={user.name || "Seen"}
-              />
-            ))}
-          </Flex>
-        )}
       </Box>
 
       {/* FILE VIEWER */}
