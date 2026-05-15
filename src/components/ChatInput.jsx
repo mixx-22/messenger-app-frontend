@@ -7,8 +7,9 @@ import {
   Button,
   HStack,
   VStack,
+  Input,
 } from "@chakra-ui/react";
-import { FileText, Image, Paperclip, Smile } from "lucide-react";
+import { FileText, Image, Paperclip, Smile, Sticker } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useChat } from "../context/ChatContext";
 import { API_BASE, authHeadersJSON } from "../services/api";
@@ -65,6 +66,10 @@ export default function ChatInput({
   const [files, setFiles] = useState([]);
   const [attachmentMode, setAttachmentMode] = useState("file");
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showGifPicker, setShowGifPicker] = useState(false);
+  const [gifQuery, setGifQuery] = useState("");
+  const [gifItems, setGifItems] = useState([]);
+  const [gifLoading, setGifLoading] = useState(false);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -82,6 +87,10 @@ export default function ChatInput({
   const attachmentLimitMessage = attachmentLimitLabel
     ? `The maximum attachment file size is ${attachmentLimitLabel} per file.`
     : "The attachment is larger than the configured limit.";
+  const gifAllowed =
+    receiver &&
+    receiver.isAnnouncement !== true &&
+    receiver.isOrganization !== true;
 
   const fileRef = useRef(null);
   const inputRef = useRef(null);
@@ -257,6 +266,115 @@ export default function ChatInput({
     setReplyTo(null);
   };
 
+  useEffect(() => {
+    if (!showGifPicker || !gifAllowed || !token) return;
+    const ac = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        setGifLoading(true);
+        const params = new URLSearchParams();
+        if (gifQuery.trim()) params.set("q", gifQuery.trim());
+        params.set("limit", "80");
+        const res = await fetch(`${API_BASE}/api/gifs?${params.toString()}`, {
+          headers: authHeadersJSON(token),
+          signal: ac.signal,
+        });
+        if (!res.ok) throw new Error("Unable to load GIFs");
+        const data = await res.json();
+        setGifItems(Array.isArray(data.items) ? data.items : []);
+      } catch (err) {
+        if (err?.name !== "AbortError") {
+          setGifItems([]);
+        }
+      } finally {
+        if (!ac.signal.aborted) setGifLoading(false);
+      }
+    }, 180);
+
+    return () => {
+      window.clearTimeout(timer);
+      ac.abort();
+    };
+  }, [gifAllowed, gifQuery, showGifPicker, token]);
+
+  const sendGif = async (gif) => {
+    const receiverId = pickId(receiver);
+    const isGroup = receiver?.isGroup === true;
+    const groupId = pickId(receiver?.groupId);
+    if (!receiverId || readOnly || !gifAllowed || !gif?.url) return;
+
+    const attachment = {
+      fileName: gif.fileName || gif.originalName || "gif",
+      originalName: gif.originalName || gif.fileName || "GIF",
+      url: gif.url,
+      mimetype: gif.mimetype || "image/gif",
+      type: "image",
+      size: gif.size,
+    };
+
+    const clientId =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random()}`;
+
+    appendLocalMessage(receiverId, {
+      _id: clientId,
+      clientId,
+      senderId: userId,
+      receiverId: isGroup ? null : receiverId,
+      groupId: isGroup ? groupId : null,
+      channel: isGroup ? "group" : "direct",
+      content: "",
+      attachments: [attachment],
+      createdAt: new Date().toISOString(),
+      pending: true,
+    });
+
+    const messageUrl = isGroup
+      ? `${API_BASE}/api/messages/groups/${groupId}`
+      : `${API_BASE}/api/messages`;
+
+    const body = {
+      ...(!isGroup ? { receiverId } : {}),
+      content: "",
+      attachments: [attachment],
+      clientId,
+    };
+
+    const res = await fetch(messageUrl, {
+      method: "POST",
+      headers: authHeadersJSON(token),
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      patchLocalMessage(receiverId, clientId, {
+        pending: false,
+        failed: true,
+      });
+      toaster.create({
+        type: "error",
+        title: "GIF not sent",
+        description: data?.message || "Please try again.",
+        duration: 3500,
+        closable: true,
+      });
+      return;
+    }
+
+    appendLocalMessage(receiverId, {
+      ...data,
+      content: "",
+      clientId,
+      pending: false,
+      attachments: Array.isArray(data.attachments) && data.attachments.length
+        ? data.attachments
+        : [attachment],
+    });
+    setShowGifPicker(false);
+  };
+
   const uploadFile = async (item, onProgress) => {
     onProgress(0.05);
     const sourceFile = item.file || item;
@@ -360,6 +478,7 @@ export default function ChatInput({
     setUploadProgress(0);
     setShowAttachMenu(false);
     setShowEmojiPicker(false);
+    setShowGifPicker(false);
     if (fileRef.current) fileRef.current.value = "";
   }, [receiver?._id]);
 
@@ -549,6 +668,77 @@ export default function ChatInput({
             </Flex>
           )}
 
+          {showGifPicker && gifAllowed && (
+            <Box
+              mb={2}
+              p={2}
+              bg={appearance.cardBg}
+              borderWidth="1px"
+              borderColor={chatTheme.soft}
+              borderRadius="md"
+              boxShadow="sm"
+            >
+              <Input
+                size="sm"
+                mb={2}
+                value={gifQuery}
+                placeholder="Search GIFs"
+                bg={appearance.inputBg}
+                color={appearance.text}
+                borderColor={appearance.border}
+                onChange={(e) => setGifQuery(e.target.value)}
+              />
+              <Box
+                display="grid"
+                gridTemplateColumns="repeat(auto-fill, minmax(88px, 1fr))"
+                gap={2}
+                maxH="230px"
+                overflowY="auto"
+              >
+                {gifItems.map((gif) => {
+                  const url = resolveUploadUrl(gif.url);
+                  return (
+                    <Box
+                      key={gif.url || gif.fileName}
+                      as="button"
+                      type="button"
+                      h="88px"
+                      borderRadius="md"
+                      overflow="hidden"
+                      bg={appearance.hoverBg}
+                      borderWidth="1px"
+                      borderColor={appearance.border}
+                      onClick={() => sendGif(gif)}
+                    >
+                      {url && (
+                        <img
+                          src={url}
+                          alt={gif.originalName || "GIF"}
+                          style={{
+                            width: "100%",
+                            height: "100%",
+                            objectFit: "cover",
+                            display: "block",
+                          }}
+                        />
+                      )}
+                    </Box>
+                  );
+                })}
+              </Box>
+              {!gifLoading && !gifItems.length && (
+                <Text mt={2} fontSize="xs" color={appearance.textMuted}>
+                  No GIFs found.
+                </Text>
+              )}
+              {gifLoading && (
+                <Text mt={2} fontSize="xs" color={appearance.textMuted}>
+                  Loading GIFs...
+                </Text>
+              )}
+            </Box>
+          )}
+
           <Flex align="flex-end" gap={{ base: 1.5, md: 2 }}>
             <Flex
               flex="1"
@@ -573,10 +763,30 @@ export default function ChatInput({
                 color={appearance.textMuted}
                 borderRadius="full"
                 flexShrink={0}
-                onClick={() => setShowEmojiPicker((value) => !value)}
+                onClick={() => {
+                  setShowEmojiPicker((value) => !value);
+                  setShowGifPicker(false);
+                }}
               >
                 <Smile size={18} />
               </IconButton>
+
+              {gifAllowed && (
+                <IconButton
+                  size={{ base: "xs", md: "md" }}
+                  aria-label="GIF"
+                  variant="ghost"
+                  color={appearance.textMuted}
+                  borderRadius="full"
+                  flexShrink={0}
+                  onClick={() => {
+                    setShowGifPicker((value) => !value);
+                    setShowEmojiPicker(false);
+                  }}
+                >
+                  <Sticker size={18} />
+                </IconButton>
+              )}
 
               {/* input */}
               <Textarea

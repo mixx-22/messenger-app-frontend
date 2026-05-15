@@ -5,6 +5,7 @@ node_modules/
 dist/
 dist-ssr/
 dist-check/
+dist-*/
 release/
 release-*/
 out/
