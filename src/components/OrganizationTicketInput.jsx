@@ -58,6 +58,16 @@ export default function OrganizationTicketInput({
     typeof maxAttachmentBytes === "number"
       ? formatBytes(maxAttachmentBytes)
       : "200MB";
+  const dateInputCss =
+    appearance.id === "dark"
+      ? {
+          colorScheme: "dark",
+          "&::-webkit-calendar-picker-indicator": {
+            filter: "invert(1)",
+            opacity: 0.85,
+          },
+        }
+      : { colorScheme: "light" };
 
   const reset = () => {
     setDateNeeded("");
@@ -294,7 +304,9 @@ export default function OrganizationTicketInput({
                   value={dateNeeded}
                   onChange={(event) => setDateNeeded(event.target.value)}
                   bg={appearance.inputStrongBg}
+                  color={appearance.text}
                   borderColor={appearance.border}
+                  css={dateInputCss}
                   required
                 />
               </Box>
