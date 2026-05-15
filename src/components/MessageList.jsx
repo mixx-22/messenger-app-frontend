@@ -14,7 +14,16 @@ import FileViewerModal from "./FileViewerModal";
 import MessageContextMenu from "./MessageContextMenu";
 import UserAvatar from "./UserAvatar";
 import MarkdownMessage from "./MarkdownMessage";
-import { CheckCheck, CornerUpLeft, MoreVertical, Reply, Smile } from "lucide-react";
+import {
+  CheckCheck,
+  CornerUpLeft,
+  Download,
+  ExternalLink,
+  FileText,
+  MoreVertical,
+  Reply,
+  Smile,
+} from "lucide-react";
 import { API_BASE, authHeadersJSON } from "../services/api";
 import { formatBytes } from "../settings/appSettings";
 import { ANNOUNCEMENT_THREAD_ID, normalizeMessage, pickId } from "../utils/messageUtils";
@@ -322,7 +331,7 @@ function isOrganizationAnnouncementMessage(msg) {
 }
 
 /* ---------------- Attachment ---------------- */
-function AttachmentRow({ file, onOpen, appearance, chatTheme, isMine }) {
+function AttachmentRow({ file, onOpen, appearance, isMine }) {
   const url = resolveUploadUrl(file?.url);
   const label = file?.originalName || file?.fileName || "Attachment";
   const sizeLabel =
@@ -339,33 +348,38 @@ function AttachmentRow({ file, onOpen, appearance, chatTheme, isMine }) {
     mimetype.startsWith("image/") ||
     /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(label);
   const isPdf = type === "pdf" || mimetype === "application/pdf" || /\.pdf$/i.test(label);
-  const cardBg = isMine ? chatTheme.soft : appearance.cardBg;
   const cardText = isMine
     ? appearance.id === "dark"
       ? appearance.text
-      : "#1f2937"
+      : "white"
     : appearance.text;
   const mutedText = isMine
     ? appearance.id === "dark"
       ? appearance.textMuted
-      : "#4b5563"
+      : "rgba(255,255,255,0.82)"
     : appearance.textMuted;
+  const actionColor = isMine
+    ? appearance.id === "dark"
+      ? appearance.text
+      : "white"
+    : appearance.text;
+  const actionHoverBg = isMine
+    ? "rgba(255,255,255,0.16)"
+    : appearance.hoverBg;
 
   return (
     <Flex
-      mt={2}
-      p={2}
-      bg={cardBg}
-      borderRadius="lg"
-      borderWidth="1px"
-      borderColor={appearance.border}
-      gap={2}
+      mt={1}
+      py={1}
+      px={0}
+      gap={2.5}
       align="center"
       cursor="default"
-      _hover={{ bg: appearance.hoverBg }}
+      minW={{ base: "220px", md: "260px" }}
+      maxW="100%"
     >
       {looksLikeImage && url ? (
-        <Box w="45px" h="45px" borderRadius="md" overflow="hidden" flexShrink={0}>
+        <Box w="36px" h="36px" borderRadius="md" overflow="hidden" flexShrink={0}>
           <img
             src={url}
             alt=""
@@ -379,23 +393,21 @@ function AttachmentRow({ file, onOpen, appearance, chatTheme, isMine }) {
         </Box>
       ) : (
         <Flex
-          w="45px"
-          h="45px"
+          w="36px"
+          h="36px"
           align="center"
           justify="center"
-          bg="blue.500"
-          color="white"
-          borderRadius="md"
-          fontSize="sm"
-          fontWeight="bold"
+          color={cardText}
           flexShrink={0}
+          opacity={0.95}
+          aria-hidden="true"
         >
-          {type === "pdf" ? "PDF" : (label.split(".").pop() || "FILE").slice(0, 4).toUpperCase()}
+          <FileText size={22} strokeWidth={2.3} />
         </Flex>
       )}
 
       <Box minW={0} flex={1}>
-          <Text fontSize="sm" fontWeight="semibold" color={cardText} noOfLines={1}>
+        <Text fontSize="sm" fontWeight="semibold" color={cardText} noOfLines={1}>
           {label}
         </Text>
         {sizeLabel && (
@@ -403,41 +415,45 @@ function AttachmentRow({ file, onOpen, appearance, chatTheme, isMine }) {
             {sizeLabel}
           </Text>
         )}
-        <HStack mt={2} gap={1}>
-          {(looksLikeImage || isPdf) && (
-            <Button
-              size="xs"
-              variant="outline"
-              bg={appearance.id === "dark" ? "#111827" : "white"}
-              color={appearance.id === "dark" ? "white" : "gray.900"}
-              borderColor={appearance.border}
-              _hover={{ bg: appearance.id === "dark" ? "#1f2937" : "gray.100" }}
-              disabled={!url}
-              onClick={() => {
-                if (!url) return;
-                if (isPdf) window.open(url, "_blank", "noopener,noreferrer");
-                else onOpen?.(file);
-              }}
-            >
-              Open
-            </Button>
-          )}
-          <Button
+      </Box>
+
+      <HStack gap={0.5} flexShrink={0}>
+        {(looksLikeImage || isPdf) && (
+          <IconButton
+            aria-label="Open file"
+            title="Open file"
             size="xs"
-            bg={chatTheme.accent}
-            color="white"
-            _hover={{ bg: chatTheme.accentHover }}
+            variant="ghost"
+            color={actionColor}
+            _hover={{ bg: actionHoverBg }}
             disabled={!url}
             onClick={() => {
-              void downloadUrl(url, label).catch(() => {
-                if (url) window.open(url, "_blank", "noopener,noreferrer");
-              });
+              if (!url) return;
+              if (isPdf) window.open(url, "_blank", "noopener,noreferrer");
+              else onOpen?.(file);
             }}
           >
-            Download
-          </Button>
-        </HStack>
-      </Box>
+            <ExternalLink size={15} />
+          </IconButton>
+        )}
+        <IconButton
+          aria-label="Download file"
+          title="Download file"
+          size="xs"
+          variant="ghost"
+          color={actionColor}
+          _hover={{ bg: actionHoverBg }}
+          flexShrink={0}
+          disabled={!url}
+          onClick={() => {
+            void downloadUrl(url, label).catch(() => {
+              if (url) window.open(url, "_blank", "noopener,noreferrer");
+            });
+          }}
+        >
+          <Download size={15} />
+        </IconButton>
+      </HStack>
     </Flex>
   );
 }
