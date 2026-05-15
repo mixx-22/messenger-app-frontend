@@ -94,6 +94,9 @@ export default function ChatInput({
 
   const fileRef = useRef(null);
   const inputRef = useRef(null);
+  const emojiPopoverRef = useRef(null);
+  const gifPopoverRef = useRef(null);
+  const attachPopoverRef = useRef(null);
   const processedDropIdRef = useRef(null);
 
   /* typing throttle */
@@ -489,9 +492,31 @@ export default function ChatInput({
     addFiles(droppedFilesBatch.files, "auto");
   }, [addFiles, droppedFilesBatch]);
 
+  useEffect(() => {
+    if (!showEmojiPicker && !showGifPicker && !showAttachMenu) return;
+    const onPointerDown = (event) => {
+      const target = event.target;
+      if (
+        emojiPopoverRef.current?.contains(target) ||
+        gifPopoverRef.current?.contains(target) ||
+        attachPopoverRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setShowEmojiPicker(false);
+      setShowGifPicker(false);
+      setShowAttachMenu(false);
+    };
+
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [showAttachMenu, showEmojiPicker, showGifPicker]);
+
   const openAttachmentPicker = (mode) => {
     setAttachmentMode(mode);
     setShowAttachMenu(false);
+    setShowEmojiPicker(false);
+    setShowGifPicker(false);
     if (fileRef.current) {
       fileRef.current.accept = mode === "photo" ? "image/*" : "";
       fileRef.current.dataset.mode = mode;
@@ -637,108 +662,6 @@ export default function ChatInput({
             </VStack>
           )}
 
-          {showEmojiPicker && (
-            <Flex
-              mb={2}
-              p={2}
-              gap={1}
-              wrap="wrap"
-              bg={appearance.cardBg}
-              borderWidth="1px"
-              borderColor={chatTheme.soft}
-              borderRadius="md"
-              boxShadow="sm"
-            >
-              {EMOJI_OPTIONS.map((emoji) => (
-                <Button
-                  key={emoji}
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  minW="32px"
-                  fontSize="lg"
-                  onClick={() => {
-                    setText((value) => `${value}${emoji}`);
-                    inputRef.current?.focus();
-                  }}
-                >
-                  {emoji}
-                </Button>
-              ))}
-            </Flex>
-          )}
-
-          {showGifPicker && gifAllowed && (
-            <Box
-              mb={2}
-              p={2}
-              bg={appearance.cardBg}
-              borderWidth="1px"
-              borderColor={chatTheme.soft}
-              borderRadius="md"
-              boxShadow="sm"
-            >
-              <Input
-                size="sm"
-                mb={2}
-                value={gifQuery}
-                placeholder="Search GIFs"
-                bg={appearance.inputBg}
-                color={appearance.text}
-                borderColor={appearance.border}
-                onChange={(e) => setGifQuery(e.target.value)}
-              />
-              <Box
-                display="grid"
-                gridTemplateColumns="repeat(auto-fill, minmax(88px, 1fr))"
-                gap={2}
-                maxH="230px"
-                overflowY="auto"
-              >
-                {gifItems.map((gif) => {
-                  const url = resolveUploadUrl(gif.url);
-                  return (
-                    <Box
-                      key={gif.url || gif.fileName}
-                      as="button"
-                      type="button"
-                      h="88px"
-                      borderRadius="md"
-                      overflow="hidden"
-                      bg={appearance.hoverBg}
-                      borderWidth="1px"
-                      borderColor={appearance.border}
-                      onClick={() => sendGif(gif)}
-                    >
-                      {url && (
-                        <img
-                          src={url}
-                          alt={gif.originalName || "GIF"}
-                          style={{
-                            width: "100%",
-                            height: "100%",
-                            objectFit: "cover",
-                            display: "block",
-                          }}
-                        />
-                      )}
-                    </Box>
-                  );
-                })}
-              </Box>
-              {!gifLoading && !gifItems.length && (
-                <Text mt={2} fontSize="xs" color={appearance.textMuted}>
-                  No GIFs found.
-                </Text>
-              )}
-              {gifLoading && (
-                <Text mt={2} fontSize="xs" color={appearance.textMuted}>
-                  Loading GIFs...
-                </Text>
-              )}
-            </Box>
-          )}
-
           <Flex align="flex-end" gap={{ base: 1.5, md: 2 }}>
             <Flex
               flex="1"
@@ -756,36 +679,151 @@ export default function ChatInput({
                 boxShadow: `0 0 0 3px ${chatTheme.soft}`,
               }}
             >
-              <IconButton
-                size={{ base: "xs", md: "md" }}
-                aria-label="emoji"
-                variant="ghost"
-                color={appearance.textMuted}
-                borderRadius="full"
-                flexShrink={0}
-                onClick={() => {
-                  setShowEmojiPicker((value) => !value);
-                  setShowGifPicker(false);
-                }}
-              >
-                <Smile size={18} />
-              </IconButton>
-
-              {gifAllowed && (
+              <Box ref={emojiPopoverRef} position="relative" flexShrink={0}>
+                {showEmojiPicker && (
+                  <Flex
+                    position="absolute"
+                    bottom="44px"
+                    left={0}
+                    zIndex={5}
+                    p={2}
+                    gap={1}
+                    wrap="wrap"
+                    w="220px"
+                    bg={appearance.modalBg}
+                    color={appearance.text}
+                    borderWidth="1px"
+                    borderColor={appearance.border}
+                    borderRadius="lg"
+                    boxShadow="xl"
+                  >
+                    {EMOJI_OPTIONS.map((emoji) => (
+                      <Button
+                        key={emoji}
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        minW="32px"
+                        fontSize="lg"
+                        onClick={() => {
+                          setText((value) => `${value}${emoji}`);
+                          inputRef.current?.focus();
+                        }}
+                      >
+                        {emoji}
+                      </Button>
+                    ))}
+                  </Flex>
+                )}
                 <IconButton
                   size={{ base: "xs", md: "md" }}
-                  aria-label="GIF"
+                  aria-label="emoji"
                   variant="ghost"
                   color={appearance.textMuted}
                   borderRadius="full"
-                  flexShrink={0}
                   onClick={() => {
-                    setShowGifPicker((value) => !value);
-                    setShowEmojiPicker(false);
+                    setShowEmojiPicker((value) => !value);
+                    setShowGifPicker(false);
+                    setShowAttachMenu(false);
                   }}
                 >
-                  <Sticker size={18} />
+                  <Smile size={18} />
                 </IconButton>
+              </Box>
+
+              {gifAllowed && (
+                <Box ref={gifPopoverRef} position="relative" flexShrink={0}>
+                  {showGifPicker && (
+                    <Box
+                      position="absolute"
+                      bottom="44px"
+                      left={{ base: "-44px", md: 0 }}
+                      zIndex={5}
+                      w={{ base: "min(320px, 86vw)", md: "360px" }}
+                      maxW="86vw"
+                      p={2}
+                      bg={appearance.modalBg}
+                      color={appearance.text}
+                      borderWidth="1px"
+                      borderColor={appearance.border}
+                      borderRadius="lg"
+                      boxShadow="xl"
+                    >
+                      <Input
+                        size="sm"
+                        mb={2}
+                        value={gifQuery}
+                        placeholder="Search GIFs"
+                        bg={appearance.inputBg}
+                        color={appearance.text}
+                        borderColor={appearance.border}
+                        onChange={(e) => setGifQuery(e.target.value)}
+                      />
+                      <Box
+                        display="grid"
+                        gridTemplateColumns="repeat(auto-fill, minmax(88px, 1fr))"
+                        gap={2}
+                        maxH="230px"
+                        overflowY="auto"
+                      >
+                        {gifItems.map((gif) => {
+                          const url = resolveUploadUrl(gif.url);
+                          return (
+                            <Box
+                              key={gif.url || gif.fileName}
+                              as="button"
+                              type="button"
+                              h="88px"
+                              borderRadius="md"
+                              overflow="hidden"
+                              bg={appearance.hoverBg}
+                              borderWidth="1px"
+                              borderColor={appearance.border}
+                              onClick={() => sendGif(gif)}
+                            >
+                              {url && (
+                                <img
+                                  src={url}
+                                  alt={gif.originalName || "GIF"}
+                                  style={{
+                                    width: "100%",
+                                    height: "100%",
+                                    objectFit: "cover",
+                                    display: "block",
+                                  }}
+                                />
+                              )}
+                            </Box>
+                          );
+                        })}
+                      </Box>
+                      {!gifLoading && !gifItems.length && (
+                        <Text mt={2} fontSize="xs" color={appearance.textMuted}>
+                          No GIFs found.
+                        </Text>
+                      )}
+                      {gifLoading && (
+                        <Text mt={2} fontSize="xs" color={appearance.textMuted}>
+                          Loading GIFs...
+                        </Text>
+                      )}
+                    </Box>
+                  )}
+                  <IconButton
+                    size={{ base: "xs", md: "md" }}
+                    aria-label="GIF"
+                    variant="ghost"
+                    color={appearance.textMuted}
+                    borderRadius="full"
+                    onClick={() => {
+                      setShowGifPicker((value) => !value);
+                      setShowEmojiPicker(false);
+                      setShowAttachMenu(false);
+                    }}
+                  >
+                    <Sticker size={18} />
+                  </IconButton>
+                </Box>
               )}
 
               {/* input */}
@@ -830,7 +868,7 @@ export default function ChatInput({
                 placeholder="Message"
               />
 
-              <Box position="relative" flexShrink={0}>
+              <Box ref={attachPopoverRef} position="relative" flexShrink={0}>
                 {showAttachMenu && (
                   <VStack
                     position="absolute"
@@ -879,7 +917,11 @@ export default function ChatInput({
                   color={appearance.textMuted}
                   borderRadius="full"
                   _hover={{ bg: appearance.hoverBg, color: appearance.text }}
-                  onClick={() => setShowAttachMenu((value) => !value)}
+                  onClick={() => {
+                    setShowAttachMenu((value) => !value);
+                    setShowEmojiPicker(false);
+                    setShowGifPicker(false);
+                  }}
                 >
                   <Paperclip size={17} />
                 </IconButton>
