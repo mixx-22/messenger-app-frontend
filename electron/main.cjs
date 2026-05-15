@@ -28,7 +28,7 @@ if (!singleInstanceLock) {
 function getLogoPath() {
   return isDev
     ? path.join(__dirname, "..", "public", "logo.png")
-    : path.join(__dirname, "..", "dist", "logo.png");
+    : path.join(__dirname, "..", "dist-electron", "logo.png");
 }
 
 function getLogoImage(size = 32) {
@@ -105,7 +105,7 @@ function createWindow() {
       "http://192.168.0.8";
     window.loadURL(devUrl);
   } else {
-    window.loadFile(path.join(__dirname, "..", "dist", "index.html"));
+    window.loadFile(path.join(__dirname, "..", "dist-electron", "index.html"));
   }
 }
 

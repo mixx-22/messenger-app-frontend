@@ -3,7 +3,13 @@ const path = require("node:path");
 
 const viteCli = path.join(__dirname, "..", "node_modules", "vite", "bin", "vite.js");
 
-const result = spawnSync(process.execPath, [viteCli, "build"], {
+const result = spawnSync(process.execPath, [
+  viteCli,
+  "build",
+  "--outDir",
+  "dist-electron",
+  "--emptyOutDir=true",
+], {
   stdio: "inherit",
   shell: false,
   env: {
