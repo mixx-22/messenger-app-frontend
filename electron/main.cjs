@@ -15,6 +15,16 @@ let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 
+const singleInstanceLock = app.requestSingleInstanceLock();
+
+if (!singleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    showMainWindow();
+  });
+}
+
 function getLogoPath() {
   return isDev
     ? path.join(__dirname, "..", "public", "logo.png")
@@ -130,14 +140,17 @@ ipcMain.handle("huni:notify-message", (_event, payload = {}) => {
   return { shown: true };
 });
 
-app.whenReady().then(() => {
-  createTray();
-  createWindow();
+if (singleInstanceLock) {
+  app.whenReady().then(() => {
+    createTray();
+    createWindow();
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+      else showMainWindow();
+    });
   });
-});
+}
 
 app.on("window-all-closed", () => {
   mainWindow = null;
