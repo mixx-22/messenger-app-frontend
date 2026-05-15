@@ -17,6 +17,10 @@ import huniLogo from "../assets/huni-logo.png";
 const SESSION_KEY = "chatSession";
 const REMEMBER_KEY = "chatRememberSession";
 
+function isDesktopApp() {
+  return Boolean(window.huniDesktop);
+}
+
 export function loadChatSession() {
   try {
     const raw =
@@ -29,7 +33,7 @@ export function loadChatSession() {
 
 export function saveChatSession(session, remember = false) {
   const value = JSON.stringify(session);
-  if (remember) {
+  if (remember || isDesktopApp()) {
     localStorage.setItem(REMEMBER_KEY, value);
     sessionStorage.removeItem(SESSION_KEY);
   } else {
