@@ -204,7 +204,9 @@ function receiptTitleForSeen(receipt) {
     .map((user) => user?.name || "User")
     .join(", ");
   const extra = users.length > 6 ? ` +${users.length - 6} more` : "";
-  return `${seenAtLabel ? `Seen ${seenAtLabel}` : "Seen"}\n${names}${extra}`;
+  return `${seenAtLabel ? `Seen ${seenAtLabel}` : "Seen"}${
+    names ? ` by ${names}${extra}` : ""
+  }`;
 }
 
 function replyPreviewText(replyTo) {
@@ -333,6 +335,9 @@ function MessageHoverActions({
               boxShadow="md"
               fontSize="11px"
               whiteSpace="pre-line"
+              minW="190px"
+              maxW="260px"
+              lineHeight="1.35"
               zIndex={20}
             >
               {receiptTitle}
