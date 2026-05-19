@@ -1,6 +1,6 @@
 import { ChakraProvider, defaultSystem } from "@chakra-ui/react";
 import { Box, Button, HStack, Input, Text, VStack } from "@chakra-ui/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ChatLayout from "./layouts/ChatLayout";
 import TicketsWorkspace from "./components/TicketsWorkspace";
 import LoginForm, {
@@ -241,9 +241,13 @@ function TermsAndPrivacyModal({ session, appearance, onAgree, onDecline }) {
 
 export default function App() {
   const [session, setSession] = useState(() => loadChatSession());
+  const [restoringSession, setRestoringSession] = useState(() =>
+    Boolean(loadChatSession())
+  );
   const [appearanceMode, setAppearanceMode] = useState(() =>
     loadAppearanceMode()
   );
+  const restoredSessionRef = useRef(false);
   const appearance = APPEARANCE_MODES[appearanceMode] || APPEARANCE_MODES.light;
 
   const toggleAppearanceMode = () => {
@@ -262,6 +266,47 @@ export default function App() {
   useEffect(() => {
     if (!session) document.title = "Huni";
   }, [session]);
+
+  useEffect(() => {
+    if (!session?.token) {
+      setRestoringSession(false);
+      return;
+    }
+    if (restoredSessionRef.current) {
+      setRestoringSession(false);
+      return;
+    }
+    restoredSessionRef.current = true;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/auth/restore`, {
+          method: "POST",
+          headers: authHeadersJSON(session.token),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+
+        if (res.ok && data?.token && data?.user) {
+          const next = { token: data.token, user: data.user };
+          saveChatSession(next, true);
+          setSession(next);
+        } else if (res.status === 401 || res.status === 403) {
+          clearChatSession();
+          setSession(null);
+        }
+      } catch {
+        // Keep the saved session during a temporary network/backend outage.
+      } finally {
+        if (!cancelled) setRestoringSession(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.token]);
 
   const handleProfileUpdated = (user) => {
     setSession((s) => {
@@ -286,6 +331,21 @@ export default function App() {
         appearance={appearance}
         onToggleAppearance={toggleAppearanceMode}
       />
+    );
+  }
+
+  if (restoringSession) {
+    return shell(
+      <Box
+        minH="100vh"
+        bg={appearance.shellBg}
+        color={appearance.text}
+        display="flex"
+        alignItems="center"
+        justifyContent="center"
+      >
+        <Text color={appearance.textMuted}>Opening Huni...</Text>
+      </Box>
     );
   }
 
