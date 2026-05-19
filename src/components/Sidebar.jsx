@@ -13,9 +13,12 @@ import {
 } from "@chakra-ui/react";
 import {
   ArrowLeft,
+  Archive,
+  Bookmark,
   Building2,
   Camera,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Check,
   Contact,
@@ -23,10 +26,12 @@ import {
   Eye,
   FileText,
   LogOut,
+  MoreVertical,
   Moon,
   Search,
   Settings as SettingsIcon,
   Sun,
+  Trash2,
   UserRound,
   Users,
   X,
@@ -68,11 +73,19 @@ function isGifAttachment(file) {
   );
 }
 
+function archiveStateKeyForChat(chat, myId) {
+  const id = String(chat?._id || "");
+  if (!id) return "";
+  if (chat?.isGroup || chat?.isOrganization) return id;
+  return [myId, id].filter(Boolean).sort().join(":");
+}
+
 // ---------------- ROW COMPONENT (FIXED) ----------------
 function ConversationRow({
   user,
   selectedUser,
   onSelectUser,
+  onOpenChatMenu,
   conversationByUser,
   onlineUsers,
   statusByUser,
@@ -95,6 +108,7 @@ function ConversationRow({
   const selected = selectedUser?._id === id;
 
   const last = conversationByUser[id];
+  const ageLabel = formatTime(last?.createdAt);
 
   const preview = last?.content?.trim()
     ? last.content
@@ -108,6 +122,7 @@ function ConversationRow({
 
   return (
     <Flex
+      role="group"
       px={{ base: 2.5, md: 3 }}
       py={{ base: 2.5, md: 2 }}
       borderRadius={{ base: "lg", md: "xl" }}
@@ -169,15 +184,18 @@ function ConversationRow({
             <Text fontWeight="semibold" truncate>
               {user.name}
             </Text>
-
-            <Text fontSize="xs" color={appearance.textSubtle} flexShrink={0}>
-              {formatTime(last?.createdAt)}
-            </Text>
           </HStack>
 
-          <Text fontSize="xs" color={appearance.textMuted} truncate>
-            {preview}
-          </Text>
+          <HStack gap={1.5} minW={0}>
+            <Text fontSize="xs" color={appearance.textMuted} truncate minW={0}>
+              {preview}
+            </Text>
+            {ageLabel && (
+              <Text fontSize="xs" color={appearance.textSubtle} flexShrink={0}>
+                {ageLabel}
+              </Text>
+            )}
+          </HStack>
         </Box>
       </HStack>
 
@@ -194,6 +212,111 @@ function ConversationRow({
           {unread > 99 ? "99+" : unread}
         </Box>
       )}
+      {onOpenChatMenu && !isAnnouncement && (
+        <IconButton
+          aria-label="Chat options"
+          size="sm"
+          variant="solid"
+          borderRadius="full"
+          minW="30px"
+          h="30px"
+          bg={selected ? appearance.inputStrongBg : appearance.cardBg}
+          color={appearance.text}
+          borderWidth="1px"
+          borderColor={appearance.border}
+          boxShadow={appearance.id === "dark" ? "none" : "sm"}
+          opacity={{ base: 1, md: 0 }}
+          _groupHover={{ opacity: 1 }}
+          _hover={{
+            bg: appearance.inputStrongBg,
+            color: appearance.text,
+            opacity: 1,
+          }}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenChatMenu(event, user);
+          }}
+        >
+          <MoreVertical size={16} />
+        </IconButton>
+      )}
+    </Flex>
+  );
+}
+
+function StarredMessageRow({ message, currentUserId, users, groups, onSelectUser, appearance, formatTime }) {
+  const isGroup = message.channel === "group";
+  const peerId =
+    String(message.senderId) === String(currentUserId)
+      ? String(message.receiverId || "")
+      : String(message.senderId || "");
+  const group = isGroup
+    ? groups.find((row) => String(row._id) === String(message.groupId))
+    : null;
+  const user = !isGroup
+    ? users.find((row) => String(row._id) === peerId)
+    : null;
+  const chatName = group?.name || user?.name || "Chat";
+  const preview = message.content?.trim()
+    ? message.content
+    : message.attachments?.length
+      ? "Attachment"
+      : "Message";
+
+  return (
+    <Flex
+      role="button"
+      px={{ base: 2.5, md: 3 }}
+      py={{ base: 2.5, md: 2 }}
+      borderRadius="xl"
+      align="center"
+      gap={3}
+      color={appearance.text}
+      _hover={{ bg: appearance.hoverBg, cursor: "pointer" }}
+      onClick={() => {
+        if (isGroup && group) {
+          onSelectUser({
+            _id: groupThreadId(group._id),
+            groupId: group._id,
+            name: group.name,
+            avatarUrl: group.avatarUrl,
+            members: group.members || [],
+            createdBy: group.createdBy,
+            isGroup: true,
+          });
+        } else if (user) {
+          onSelectUser(user);
+        }
+      }}
+    >
+      <Flex
+        w="34px"
+        h="34px"
+        align="center"
+        justify="center"
+        borderRadius="full"
+        bg={appearance.inputStrongBg}
+        color="#7c3aed"
+        flexShrink={0}
+      >
+        <Bookmark size={17} />
+      </Flex>
+      <Box minW={0} flex={1}>
+        <HStack justify="space-between" gap={2}>
+          <Text fontWeight="semibold" truncate>
+            Starred message
+          </Text>
+          <Text fontSize="xs" color={appearance.textSubtle} flexShrink={0}>
+            {formatTime(message.createdAt)}
+          </Text>
+        </HStack>
+        <Text fontSize="xs" color={appearance.textMuted} truncate>
+          You starred this message from {chatName}
+        </Text>
+        <Text fontSize="sm" truncate>
+          {preview}
+        </Text>
+      </Box>
     </Flex>
   );
 }
@@ -222,6 +345,11 @@ export default function Sidebar({
   const [allFiles, setAllFiles] = useState([]);
   const [loadingAllFiles, setLoadingAllFiles] = useState(false);
   const [sidebarSearchMessages, setSidebarSearchMessages] = useState([]);
+  const [chatStates, setChatStates] = useState({});
+  const [starredMessages, setStarredMessages] = useState([]);
+  const [loadingStarred, setLoadingStarred] = useState(false);
+  const [chatMenu, setChatMenu] = useState(null);
+  const [deleteChatTarget, setDeleteChatTarget] = useState(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [showGroupCreator, setShowGroupCreator] = useState(false);
   const [showOrganizationCreator, setShowOrganizationCreator] = useState(false);
@@ -240,6 +368,10 @@ export default function Sidebar({
   const [contactSortDir, setContactSortDir] = useState("asc");
   const [contactStatusFilter, setContactStatusFilter] = useState("all");
   const [activeTab, setActiveTab] = useState("conversations");
+  const [filterScrollHint, setFilterScrollHint] = useState({
+    left: false,
+    right: false,
+  });
   const [statusDraft, setStatusDraft] = useState(
     currentUser?.status || "available",
   );
@@ -260,6 +392,16 @@ export default function Sidebar({
   const avatarInputRef = useRef(null);
   const filterRailRef = useRef(null);
   const filterButtonRefs = useRef({});
+
+  const updateFilterScrollHint = useCallback(() => {
+    const el = filterRailRef.current;
+    if (!el) return;
+    const maxLeft = Math.max(0, el.scrollWidth - el.clientWidth);
+    setFilterScrollHint({
+      left: el.scrollLeft > 2,
+      right: el.scrollLeft < maxLeft - 2,
+    });
+  }, []);
 
   const {
     token,
@@ -390,6 +532,130 @@ export default function Sidebar({
       return next;
     });
   }, [token]);
+
+  const loadChatStates = useCallback(async () => {
+    if (!token) return;
+    const res = await fetch(`${API_BASE}/api/messages/chat-states`, {
+      headers: authHeadersJSON(token),
+    });
+    if (!res.ok) return;
+    const data = await res.json().catch(() => ({}));
+    const rows = Array.isArray(data.items) ? data.items : [];
+    setChatStates(
+      Object.fromEntries(rows.map((row) => [String(row.threadId), row])),
+    );
+  }, [token]);
+
+  const loadStarredMessages = useCallback(async () => {
+    if (!token) return;
+    setLoadingStarred(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/messages/starred?limit=200`, {
+        headers: authHeadersJSON(token),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !Array.isArray(data.items)) {
+        setStarredMessages([]);
+        return;
+      }
+      const decrypted = await Promise.all(data.items.map(decryptMessagePayload));
+      setStarredMessages(decrypted.map(normalizeMessage));
+    } finally {
+      setLoadingStarred(false);
+    }
+  }, [token]);
+
+  const applyChatState = async (threadId, action) => {
+    if (!token || !threadId) return;
+    const res = await fetch(`${API_BASE}/api/messages/chat-state`, {
+      method: "PATCH",
+      headers: authHeadersJSON(token),
+      body: JSON.stringify({ threadId, action }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toaster.create({
+        type: "error",
+        title: "Chat not updated",
+        description: data?.message || "Please try again.",
+      });
+      return;
+    }
+    setChatStates((prev) => ({ ...prev, [String(threadId)]: data }));
+    setChatMenu(null);
+    setDeleteChatTarget(null);
+    const selectedStateKey = selectedUser
+      ? archiveStateKeyForChat(selectedUser, myId)
+      : "";
+    if (
+      selectedUser?._id &&
+      (String(selectedUser._id) === String(threadId) ||
+        String(selectedStateKey) === String(threadId))
+    ) {
+      onSelectUser(null);
+    }
+    toaster.create({
+      type: "success",
+      title:
+        action === "delete"
+          ? "Chat deleted"
+          : action === "archive"
+            ? "Chat archived"
+            : "Chat restored",
+    });
+  };
+
+  const leaveGroupChat = async (group) => {
+    if (!token || !group?.groupId) return;
+    const res = await fetch(`${API_BASE}/api/groups/${pickId(group.groupId)}/leave`, {
+      method: "POST",
+      headers: authHeadersJSON(token),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toaster.create({
+        type: "error",
+        title: "Could not leave group",
+        description: data?.message || "Please try again.",
+      });
+      return;
+    }
+    setDeleteChatTarget(null);
+    await loadGroups();
+    if (selectedUser?._id && String(selectedUser._id) === String(group._id)) {
+      onSelectUser(null);
+    }
+    toaster.create({ type: "success", title: "Left group chat" });
+  };
+
+  const leaveOrganizationChat = async (organization) => {
+    if (!token || !organization?.organizationId) return;
+    const res = await fetch(
+      `${API_BASE}/api/organizations/${pickId(organization.organizationId)}/leave`,
+      {
+        method: "POST",
+        headers: authHeadersJSON(token),
+      },
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toaster.create({
+        type: "error",
+        title: "Could not leave organization",
+        description: data?.message || "Please try again.",
+      });
+      return;
+    }
+    setDeleteChatTarget(null);
+    await loadOrganizations();
+    if (
+      selectedUser?._id &&
+      String(selectedUser._id) === String(organization._id)
+    ) {
+      onSelectUser(null);
+    }
+    toaster.create({ type: "success", title: "Left organization channel" });
+  };
 
   const createGroup = async () => {
     if (creatingGroup) return;
@@ -664,7 +930,12 @@ export default function Sidebar({
   useEffect(() => {
     void loadGroups();
     void loadOrganizations();
-  }, [loadGroups, loadOrganizations, groupsVersion]);
+    void loadChatStates();
+  }, [loadGroups, loadOrganizations, loadChatStates, groupsVersion]);
+
+  useEffect(() => {
+    if (chatTypeFilter === "starred") void loadStarredMessages();
+  }, [chatTypeFilter, loadStarredMessages]);
 
   // ---------------- THREADMAP -> LAST MESSAGE (SOURCE OF TRUTH) ----------------
   // Ensures sidebar preview updates instantly when ChatContext receives/sends messages,
@@ -1033,8 +1304,28 @@ export default function Sidebar({
         block: "nearest",
         inline: "center",
       });
+      window.setTimeout(updateFilterScrollHint, 180);
     });
   };
+
+  useEffect(() => {
+    if (activeTab !== "conversations") return;
+    const el = filterRailRef.current;
+    if (!el) return;
+
+    updateFilterScrollHint();
+    const onScroll = () => updateFilterScrollHint();
+    const onResize = () => updateFilterScrollHint();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onResize);
+    const timer = window.setTimeout(updateFilterScrollHint, 120);
+
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onResize);
+      window.clearTimeout(timer);
+    };
+  }, [activeTab, updateFilterScrollHint]);
 
   const isSubView = activeTab === "contacts" || activeView === "admin";
   const sidebarTabLabel = activeTab === "contacts" ? "Contacts" : "Chats";
@@ -1197,18 +1488,39 @@ export default function Sidebar({
   }, [organizations, matchesQuery]);
 
   // ---------------- SORT CONVERSATIONS (FIXED) ----------------
+  const archivedThreadIds = useMemo(
+    () =>
+      new Set(
+        Object.entries(chatStates)
+          .filter(([, state]) => state?.archived && !state?.deletedAt)
+          .map(([threadId]) => threadId),
+      ),
+    [chatStates],
+  );
+
   const conversations = useMemo(() => {
     const include = (type) => chatTypeFilter === "all" || chatTypeFilter === type;
+    const specialArchive = chatTypeFilter === "archived";
     const rows = [
-      ...(include("announcement") && matchesQuery(announcementPeer)
+      ...(!specialArchive && include("announcement") && matchesQuery(announcementPeer)
         ? [announcementPeer]
         : []),
-      ...(include("organization") ? organizationPeers : []),
-      ...(include("group") ? groupPeers : []),
-      ...(include("direct")
+      ...(!specialArchive && include("organization") ? organizationPeers : []),
+      ...(include("group") || specialArchive ? groupPeers : []),
+      ...(include("direct") || specialArchive
         ? peers.filter((u) => listConversationByUser[String(u._id)])
         : []),
-    ];
+    ].filter((row) => {
+      const threadId = String(row._id);
+      const stateKey = archiveStateKeyForChat(row, myId);
+      const deletedAt = chatStates[stateKey]?.deletedAt
+        ? new Date(chatStates[stateKey].deletedAt).getTime()
+        : 0;
+      const lastAt = new Date(listConversationByUser[threadId]?.createdAt || 0).getTime();
+      if (deletedAt && (!lastAt || lastAt <= deletedAt)) return false;
+      if (specialArchive) return archivedThreadIds.has(stateKey);
+      return !archivedThreadIds.has(stateKey);
+    });
 
     return rows.sort((a, b) => {
       const aId = String(a._id);
@@ -1222,9 +1534,12 @@ export default function Sidebar({
   }, [
     announcementPeer,
     chatTypeFilter,
+    archivedThreadIds,
+    chatStates,
     groupPeers,
     listConversationByUser,
     matchesQuery,
+    myId,
     organizationPeers,
     peers,
   ]);
@@ -1254,11 +1569,21 @@ export default function Sidebar({
   const formatTime = (date) => {
     if (!date) return "";
     const d = new Date(date);
+    const time = d.getTime();
+    if (Number.isNaN(time)) return "";
     const now = new Date();
+    const diffMs = now.getTime() - time;
+    if (diffMs < 0) return d.toLocaleDateString();
 
-    return d.toDateString() === now.toDateString()
-      ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-      : d.toLocaleDateString();
+    const minute = 60 * 1000;
+    const hour = 60 * minute;
+    const day = 24 * hour;
+    if (diffMs < minute) return "now";
+    if (diffMs < hour) return `${Math.floor(diffMs / minute)}m`;
+    if (diffMs < day) return `${Math.floor(diffMs / hour)}h`;
+    if (diffMs < 7 * day) return `${Math.floor(diffMs / day)}d`;
+    if (diffMs < 365 * day) return `${Math.floor(diffMs / (7 * day))}w`;
+    return `${Math.max(1, Math.floor(diffMs / (365 * day)))}y`;
   };
 
   const ghostButtonProps = {
@@ -1381,7 +1706,9 @@ export default function Sidebar({
         minH={0}
       >
         <Box
-          p={{ base: 2.5, md: 3 }}
+          px={{ base: 2.5, md: 3 }}
+          pt={{ base: 2.5, md: 3 }}
+          pb={0}
           borderBottom="1px solid"
           borderColor={
             appearance.id === "dark"
@@ -1391,49 +1718,93 @@ export default function Sidebar({
           flexShrink={0}
         >
           {activeTab === "conversations" && (
-            <HStack
-              ref={filterRailRef}
-              gap={3}
-              overflowX="auto"
-              pb={0}
-              css={{
-                scrollbarWidth: "none",
-                "&::-webkit-scrollbar": { display: "none" },
-              }}
-            >
-              {[
-                ["all", "All"],
-                ["direct", "Chats"],
-                ["organization", "Organizations"],
-                ["group", "Groups"],
-                ["announcement", "Announcement"],
-                ["files", "Files"],
-              ].map(([id, label]) => {
-                const selected = chatTypeFilter === id;
-                return (
-                  <Button
-                    key={id}
-                    ref={(node) => {
-                      if (node) filterButtonRefs.current[id] = node;
-                    }}
-                    size="sm"
-                    flexShrink={0}
-                    minW="max-content"
-                    borderRadius="md"
-                    bg={selected ? appearance.inputStrongBg : "transparent"}
-                    color={selected ? "#7c3aed" : appearance.textMuted}
-                    borderBottomWidth="2px"
-                    borderBottomColor={selected ? "#7c3aed" : "transparent"}
-                    borderBottomRadius="0"
-                    fontWeight="semibold"
-                    _hover={{ bg: appearance.hoverBg, color: appearance.text }}
-                    onClick={() => selectChatTypeFilter(id)}
-                  >
-                    {label}
-                  </Button>
-                );
-              })}
-            </HStack>
+            <Box position="relative" mx={{ base: -2.5, md: -3 }}>
+              {filterScrollHint.left && (
+                <Flex
+                  position="absolute"
+                  left={0}
+                  top={0}
+                  bottom="1px"
+                  w="32px"
+                  align="center"
+                  justify="flex-start"
+                  pl={1}
+                  zIndex={2}
+                  pointerEvents="none"
+                  bg={`linear-gradient(90deg, ${appearance.panelBg} 35%, transparent)`}
+                  color="#7c3aed"
+                >
+                  <ChevronLeft size={16} />
+                </Flex>
+              )}
+              {filterScrollHint.right && (
+                <Flex
+                  position="absolute"
+                  right={0}
+                  top={0}
+                  bottom="1px"
+                  w="32px"
+                  align="center"
+                  justify="flex-end"
+                  pr={1}
+                  zIndex={2}
+                  pointerEvents="none"
+                  bg={`linear-gradient(270deg, ${appearance.panelBg} 35%, transparent)`}
+                  color="#7c3aed"
+                >
+                  <ChevronRight size={16} />
+                </Flex>
+              )}
+              <HStack
+                ref={filterRailRef}
+                gap={3}
+                overflowX="auto"
+                align="flex-end"
+                mb="-1px"
+                px={{ base: 2.5, md: 3 }}
+                css={{
+                  scrollbarWidth: "none",
+                  "&::-webkit-scrollbar": { display: "none" },
+                }}
+              >
+                {[
+                  ["all", "All"],
+                  ["direct", "Chats"],
+                  ["organization", "Organizations"],
+                  ["group", "Groups"],
+                  ["announcement", "Announcement"],
+                  ["archived", "Archived"],
+                  ["starred", "Starred"],
+                  ["files", "Files"],
+                ].map(([id, label]) => {
+                  const selected = chatTypeFilter === id;
+                  return (
+                    <Button
+                      key={id}
+                      ref={(node) => {
+                        if (node) filterButtonRefs.current[id] = node;
+                      }}
+                      size="sm"
+                      flexShrink={0}
+                      minW="max-content"
+                      borderRadius={0}
+                      bg="transparent"
+                      color={selected ? "#7c3aed" : appearance.textMuted}
+                      borderBottomWidth="2px"
+                      borderBottomColor={selected ? "#7c3aed" : "transparent"}
+                      borderBottomRadius="0"
+                      fontWeight="semibold"
+                      px={2}
+                      pb={2}
+                      _hover={{ bg: "transparent", color: appearance.text }}
+                      onClick={() => selectChatTypeFilter(id)}
+                    >
+                      {label}
+                    </Button>
+                  );
+                })}
+              </HStack>
+            </Box>
           )}
           {activeTab === "contacts" && (
             <VStack align="stretch" gap={2}>
@@ -1504,6 +1875,31 @@ export default function Sidebar({
                   </Text>
                 )}
               </VStack>
+            ) : chatTypeFilter === "starred" ? (
+              <VStack align="stretch" gap={1}>
+                {loadingStarred ? (
+                  <Text p={3} color={appearance.textMuted}>
+                    Loading starred messages...
+                  </Text>
+                ) : starredMessages.length ? (
+                  starredMessages.map((message) => (
+                    <StarredMessageRow
+                      key={message._id}
+                      message={message}
+                      currentUserId={myId}
+                      users={users}
+                      groups={groups}
+                      onSelectUser={onSelectUser}
+                      appearance={appearance}
+                      formatTime={formatTime}
+                    />
+                  ))
+                ) : (
+                  <Text p={3} color={appearance.textMuted}>
+                    No starred messages
+                  </Text>
+                )}
+              </VStack>
             ) : (
               <VStack align="stretch" gap={1}>
                 {conversations.length ? (
@@ -1513,6 +1909,14 @@ export default function Sidebar({
                     user={user}
                     selectedUser={selectedUser}
                     onSelectUser={onSelectUser}
+                    onOpenChatMenu={(event, chat) => {
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      setChatMenu({
+                        chat,
+                        x: rect.left,
+                        y: rect.bottom + 6,
+                      });
+                    }}
                     conversationByUser={listConversationByUser}
                       onlineUsers={onlineUsers}
                       statusByUser={statusByUser}
@@ -1567,6 +1971,161 @@ export default function Sidebar({
           if (file) void uploadMyAvatar(file);
         }}
       />
+
+      {chatMenu && (
+        <Box
+          position="fixed"
+          inset={0}
+          zIndex={2300}
+          onClick={() => setChatMenu(null)}
+        >
+          <VStack
+            align="stretch"
+            gap={0}
+            position="fixed"
+            left={`${Math.min(chatMenu.x, window.innerWidth - 230)}px`}
+            top={`${Math.min(chatMenu.y, window.innerHeight - 150)}px`}
+            w="220px"
+            bg={appearance.modalBg}
+            color={appearance.text}
+            borderWidth="1px"
+            borderColor={appearance.border}
+            borderRadius="lg"
+            boxShadow="xl"
+            overflow="hidden"
+            p={1}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {!chatMenu.chat?.isOrganization && (
+              <Button
+                variant="ghost"
+                justifyContent="flex-start"
+                gap={3}
+                color={appearance.text}
+                _hover={{ bg: appearance.hoverBg }}
+                onClick={() =>
+                  void applyChatState(
+                    archiveStateKeyForChat(chatMenu.chat, myId),
+                    archivedThreadIds.has(archiveStateKeyForChat(chatMenu.chat, myId))
+                      ? "unarchive"
+                      : "archive",
+                  )
+                }
+              >
+                <Archive size={17} />
+                {archivedThreadIds.has(archiveStateKeyForChat(chatMenu.chat, myId))
+                  ? "Unarchive chat"
+                  : "Archive chat"}
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              justifyContent="flex-start"
+              gap={3}
+              color="red.500"
+              _hover={{ bg: appearance.hoverBg }}
+              onClick={() => {
+                setDeleteChatTarget(chatMenu.chat);
+                setChatMenu(null);
+              }}
+            >
+              {chatMenu.chat?.isGroup || chatMenu.chat?.isOrganization ? (
+                <LogOut size={17} />
+              ) : (
+                <Trash2 size={17} />
+              )}
+              {chatMenu.chat?.isOrganization
+                ? "Leave organization"
+                : chatMenu.chat?.isGroup
+                  ? "Leave group chat"
+                  : "Delete chat"}
+            </Button>
+          </VStack>
+        </Box>
+      )}
+
+      {deleteChatTarget && (
+        <Box
+          position="fixed"
+          inset={0}
+          zIndex={2350}
+          bg="blackAlpha.600"
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+          p={4}
+          onClick={() => setDeleteChatTarget(null)}
+        >
+          <Box
+            w="full"
+            maxW="360px"
+            bg={appearance.modalBg}
+            color={appearance.text}
+            borderRadius="xl"
+            boxShadow="2xl"
+            p={5}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <HStack gap={3} mb={4}>
+              <UserAvatar
+                name={deleteChatTarget.name}
+                avatarUrl={deleteChatTarget.avatarUrl}
+                size="sm"
+              />
+              <Text fontSize="lg" fontWeight="bold">
+                {deleteChatTarget.isOrganization
+                  ? "Leave organization"
+                  : deleteChatTarget.isGroup
+                    ? "Leave group chat"
+                    : "Delete chat"}
+              </Text>
+            </HStack>
+            <Text mb={3}>
+              {deleteChatTarget.isGroup
+                ? `Are you sure you want to leave ${deleteChatTarget.name}?`
+                : deleteChatTarget.isOrganization
+                  ? `Are you sure you want to leave ${deleteChatTarget.name}?`
+                  : `Are you sure you want to delete all message history with ${deleteChatTarget.name}?`}
+            </Text>
+            <Text color={appearance.textMuted} fontSize="sm">
+              {deleteChatTarget.isGroup
+                ? "This group will move out of your chat list."
+                : deleteChatTarget.isOrganization
+                  ? "This organization channel will move out of your chat list."
+                  : "This action cannot be undone."}
+            </Text>
+            <HStack justify="flex-end" mt={6}>
+              <Button
+                variant="ghost"
+                color={appearance.text}
+                _hover={{ bg: appearance.hoverBg, color: appearance.text }}
+                onClick={() => setDeleteChatTarget(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                bg="red.500"
+                color="white"
+                _hover={{ bg: "red.600" }}
+                onClick={() =>
+                  deleteChatTarget.isGroup
+                    ? void leaveGroupChat(deleteChatTarget)
+                    : deleteChatTarget.isOrganization
+                      ? void leaveOrganizationChat(deleteChatTarget)
+                    : void applyChatState(
+                        archiveStateKeyForChat(deleteChatTarget, myId),
+                        "delete",
+                      )
+                }
+              >
+                {deleteChatTarget.isGroup || deleteChatTarget.isOrganization
+                  ? "Leave"
+                  : "Delete"}
+              </Button>
+            </HStack>
+          </Box>
+        </Box>
+      )}
 
       {showDrawer && (
         <Box

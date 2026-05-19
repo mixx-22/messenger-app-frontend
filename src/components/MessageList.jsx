@@ -175,9 +175,9 @@ function directSeenReceipt(msg, receiverId) {
   return { seen: false, seenAt: "" };
 }
 
-function multiSeenReceipt(msg, userId) {
+function multiSeenReceipt(msg, userId, includeSelf = false) {
   const rows = seenUsersForMessage(msg)
-    .filter((row) => String(row?.userId) !== String(userId))
+    .filter((row) => includeSelf || String(row?.userId) !== String(userId))
     .sort((a, b) => {
       const ad = new Date(a?.seenAt || 0).getTime();
       const bd = new Date(b?.seenAt || 0).getTime();
@@ -726,7 +726,6 @@ export default function MessageList({
     const unread = messages
       .filter((m) => {
         if (!m?._id || markedRef.current.has(m._id)) return false;
-        if (String(m.senderId) === String(userId)) return false;
 
         if (isAnnouncement) {
           return m.channel === "announcement";
@@ -746,6 +745,7 @@ export default function MessageList({
           );
         }
 
+        if (String(m.senderId) === String(userId)) return false;
         return String(m.receiverId) === String(userId) && !m.isRead;
       })
       .map((m) => m._id);
@@ -914,8 +914,8 @@ export default function MessageList({
               !next || String(next.senderId) !== String(msg.senderId);
             const reactions = reactionSummary(msg.reactions);
             const receipt =
-              isMine && (isGroup || isAnnouncement || isOrganization)
-                ? multiSeenReceipt(msg, userId)
+              isGroup || isAnnouncement || isOrganization
+                ? multiSeenReceipt(msg, userId, true)
                 : !isGroup && !isAnnouncement && !isOrganization && isMine
                   ? directSeenReceipt(msg, receiver?._id)
                   : { seen: false, seenAt: "", seenUsers: [] };
