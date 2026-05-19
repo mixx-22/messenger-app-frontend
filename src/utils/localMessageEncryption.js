@@ -8,6 +8,12 @@ function hasCrypto() {
   return Boolean(window.crypto?.subtle && window.crypto?.getRandomValues);
 }
 
+function shouldEncryptOutgoingMessages() {
+  if (typeof window === "undefined") return false;
+  if (window.huniDesktop) return false;
+  return window.location.protocol === "https:";
+}
+
 function bytesToBase64Url(bytes) {
   let binary = "";
   bytes.forEach((byte) => {
@@ -74,6 +80,7 @@ export async function encryptMessageContent(value) {
   if (typeof value !== "string" || value === "" || isEncryptedMessageContent(value)) {
     return value;
   }
+  if (!shouldEncryptOutgoingMessages()) return value;
   if (isEmojiOnlyContent(value)) return value;
 
   const key = await encryptionKey();
